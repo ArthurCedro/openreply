@@ -67,8 +67,17 @@ export default function PrivacyPage() {
       <section>
         <h2 className="text-xl font-bold text-white">Contact</h2>
         <p className="mt-3">
-          For privacy questions, contact the repository owner through GitHub or
-          the support email configured for the hosted OpenReply service.
+          {process.env.LEGAL_CONTACT_EMAIL ? (
+            <>
+              For privacy questions, contact{" "}
+              <a className="underline" href={`mailto:${process.env.LEGAL_CONTACT_EMAIL}`}>
+                {process.env.LEGAL_CONTACT_EMAIL}
+              </a>
+              .
+            </>
+          ) : (
+            "For privacy questions, contact the repository owner through GitHub or the support email configured for the hosted OpenReply service."
+          )}
         </p>
       </section>
     </LegalShell>

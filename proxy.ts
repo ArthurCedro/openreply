@@ -20,13 +20,13 @@ export function proxy(request: NextRequest) {
   const isAuthenticated = hasSessionCookie(request);
 
   if (isProtected && !isAuthenticated) {
-    const loginUrl = new URL("/login", request.url);
+    const loginUrl = new URL("/login", process.env.NEXTAUTH_URL ?? request.url);
     loginUrl.searchParams.set("callbackUrl", pathname);
     return NextResponse.redirect(loginUrl);
   }
 
   if (isLogin && isAuthenticated) {
-    return NextResponse.redirect(new URL("/dashboard", request.url));
+    return NextResponse.redirect(new URL("/dashboard", process.env.NEXTAUTH_URL ?? request.url));
   }
 
   return NextResponse.next();
