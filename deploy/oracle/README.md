@@ -13,10 +13,10 @@ Vercel + worker ──TLS──▶ Neon
 
 | Arquivo | Para quê |
 | --- | --- |
-| `setup-vm.sh` | Instala Docker, Node 24, pm2, swap e abre a porta 6380 no iptables |
+| `setup-vm.sh` | Instala Docker, Node 24, pm2 e swap; limita conexões novas na 6380 por IP |
 | `redis/redis.conf` | TLS na 6380, AOF, `noeviction`, 256 MB |
 | `redis/docker-compose.yml` | Publica 6379 só em 127.0.0.1 e 6380 na internet |
-| `redis/make-acl.sh` | Gera `users.acl` com senha aleatória (desativa o usuário `default`) |
+| `redis/make-acl.sh` | Gera `users.acl` com os usuários `worker` e `vercel` (permissões mínimas) e desativa o `default` |
 | `redis/issue-cert.sh` | Certificado Let's Encrypt via DuckDNS, com renovação automática |
 | `ecosystem.config.cjs` | Mantém o worker ligado com pm2 |
 | `worker.env.example` | Modelo do `.env` do worker |
@@ -55,7 +55,7 @@ exit   # entre de novo para o grupo docker valer
 
 ```bash
 cd ~/openreply/deploy/oracle/redis
-./make-acl.sh                       # guarde a senha exibida
+./make-acl.sh                       # guarde as duas senhas exibidas
 DUCKDNS_TOKEN=... ./issue-cert.sh openreply-redis.duckdns.org seu@email
 docker compose up -d && docker compose ps
 ```
@@ -66,20 +66,23 @@ docker compose up -d && docker compose ps
 cd ~/openreply
 cp deploy/oracle/worker.env.example .env && chmod 600 .env && nano .env
 npm ci && npm run db:generate
-pm2 start deploy/oracle/ecosystem.config.cjs && pm2 save && pm2 startup
+pm2 start deploy/oracle/ecosystem.config.cjs && pm2 save
+pm2 startup                         # rode o comando sudo que ele imprimir
 pm2 logs openreply-worker --lines 20
 ```
 
 ## 6. Vercel
 
-`REDIS_URL=rediss://openreply:SENHA@openreply-redis.duckdns.org:6380`
+`REDIS_URL=rediss://vercel:SENHA_VERCEL@openreply-redis.duckdns.org:6380`
+
+Região das funções: `gru1` (São Paulo), perto do Neon e da VM.
 
 ## Verificação
 
 Do seu Mac:
 
 ```bash
-redis-cli --tls -u "rediss://openreply:SENHA@openreply-redis.duckdns.org:6380" ping
+redis-cli --tls -u "rediss://vercel:SENHA_VERCEL@openreply-redis.duckdns.org:6380" ping
 nc -z -G 5 openreply-redis.duckdns.org 6379 || echo "6379 fechada (correto)"
 ```
 
@@ -87,7 +90,26 @@ nc -z -G 5 openreply-redis.duckdns.org 6379 || echo "6379 fechada (correto)"
 
 - Certificado: renovado pelo cron do acme.sh, que reinicia o Redis.
 - Atualizar o worker: `git pull && npm ci && npm run db:generate && pm2 restart openreply-worker`.
-- Trocar a senha: apague `users.acl`, rode `make-acl.sh`, `docker compose restart`,
+- Trocar as senhas: apague `users.acl`, rode `make-acl.sh`, `docker compose restart`,
   e atualize o `.env` do worker e o `REDIS_URL` na Vercel.
-- A Oracle pode recuperar VMs Always Free ociosas; o worker mantém uso de CPU,
-  mas acompanhe os avisos por e-mail da Oracle.
+- Atualizar o Redis: `docker compose pull && docker compose up -d` (mensalmente).
+- Backup: crie em Block Storage → Boot Volumes uma política de backup (o Always
+  Free permite até 5 backups). A fila é gravada em AOF no volume Docker; se for
+  perdida, a busca periódica recupera comentários das últimas 72 h e o `DmLog`
+  no Neon impede DMs duplicadas.
+- A Oracle pode recuperar VMs Always Free ociosas (7 dias com CPU no p95,
+  rede e, no A1, memória abaixo de 20%). O worker sozinho fica abaixo disso.
+  Converter a conta para Pay As You Go (sem custo dentro dos limites Always
+  Free) remove essa recuperação; acompanhe também os e-mails da Oracle.
+
+## Modelo de segurança
+
+- Usuário `default` desligado. `vercel` só acessa `bull:dm-processing:*`,
+  `health:worker:dm` e `alerts:worker:dm`, sem comandos perigosos. `worker`
+  acessa tudo, menos comandos administrativos. O Redis não restringe usuário
+  por porta, então a senha do `worker` nunca deve sair da VM.
+- Porta 6379 publicada apenas em 127.0.0.1; 6380 exige TLS 1.2+.
+- Portas publicadas pelo Docker ignoram a chain INPUT: quem controla o acesso à
+  6380 é a Security List da Oracle. O `setup-vm.sh` só limita conexões novas por
+  IP (20/min) na chain DOCKER-USER.
+- Não é possível restringir por IP de origem, porque os IPs da Vercel mudam.

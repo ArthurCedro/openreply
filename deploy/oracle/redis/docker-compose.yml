@@ -12,7 +12,8 @@ services:
       - ./tls:/tls:ro
       - redisdata:/data
     healthcheck:
-      test: ["CMD-SHELL", "redis-cli --user healthcheck --pass healthcheck --no-auth-warning ping | grep -q PONG"]
+      # The default user is off, so a live server answers NOAUTH.
+      test: ["CMD-SHELL", "redis-cli -p 6379 ping 2>&1 | grep -qE 'PONG|NOAUTH'"]
       interval: 10s
       timeout: 5s
       retries: 5
