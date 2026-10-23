@@ -1,0 +1,21 @@
+services:
+  redis:
+    image: redis:7.4-alpine
+    restart: unless-stopped
+    command: ["redis-server", "/usr/local/etc/redis/redis.conf"]
+    ports:
+      - "127.0.0.1:6379:6379"
+      - "0.0.0.0:6380:6380"
+    volumes:
+      - ./redis.conf:/usr/local/etc/redis/redis.conf:ro
+      - ./users.acl:/usr/local/etc/redis/users.acl:ro
+      - ./tls:/tls:ro
+      - redisdata:/data
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli --user healthcheck --pass healthcheck --no-auth-warning ping | grep -q PONG"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  redisdata:
